@@ -2,29 +2,13 @@
 <html lang="en">
 <head>
     <link href="./src/css/output.css" rel="stylesheet">
-    <script type="module" src="./src/js/chess.js"></script>
+    <script type="module" src="./src/js/onlineChess.js"></script>
+    <script type="module" src="./src/js/chessMenu.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chess</title>
 </head>
 <body class="flex justify-center items-center w-screen h-screen bg-slate-800 m-0 p-0" id="body">
-    <div class="flex">
-        <canvas class="border-8 border-amber-950 rounded-xl shadow-2xl" id="canvas" width="800" height="800"></canvas>
-        <div id="notification" class="hidden absolute flex flex-col justify-around items-center
-         bg-slate-500 w-1/2 h-1/2 top-1/4 left-1/4 rounded-xl shadow-2xl border-black border-8">
-            <h1 id="winner" class="text-bold italic text-white text-3xl">
-                Winner Holder Text
-            </h1>
-            <!-- <p id="subtext" class="text-white text-xl">
-                Other Text
-            </p> -->
-            <!-- Restart -->
-            <button id="restartButton" class="text-black text-bold text-2xl border-4 p-2 hover:scale-110 rounded-2xl shadow-2xl border-black bg-white">
-                Play Again
-            </button>
-        </div>
-    </div>
-
-
+    <window-content class="w-screen h-screen flex justify-center items-center"></window-content>
 </body>
 </html>

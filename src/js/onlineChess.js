@@ -1,22 +1,21 @@
+import { DB_URL } from "./chessMenu.js";
 /* Image assets for pieces */
 // Pawns
-const whitePawnImage = new Image(); whitePawnImage.src = "./src/assets/whitePawn.png";
-const blackPawnImage = new Image(); blackPawnImage.src = "./src/assets/blackPawn.png";
-// Bishops
-const whiteBishopImage = new Image(); whiteBishopImage.src = "./src/assets/whiteBishop.png";
-const blackBishopImage = new Image(); blackBishopImage.src = "./src/assets/blackBishop.png";
-// Knights
-const whiteKnightImage = new Image(); whiteKnightImage.src = "./src/assets/whiteKnight.png";
-const blackKnightImage = new Image(); blackKnightImage.src = "./src/assets/blackKnight.png";
-// Rooks
-const whiteRookImage = new Image(); whiteRookImage.src = "./src/assets/whiteRook.png";
-const blackRookImage = new Image(); blackRookImage.src = "./src/assets/blackRook.png";
-// Kings
-const whiteKingImage = new Image(); whiteKingImage.src = "./src/assets/whiteKing.png";
-const blackKingImage = new Image(); blackKingImage.src = "./src/assets/blackKing.png";
-// Queens
-const whiteQueenImage = new Image(); whiteQueenImage.src = "./src/assets/whiteQueen.png";
-const blackQueenImage = new Image(); blackQueenImage.src = "./src/assets/blackQueen.png";
+const pieceImageMap = new Map([
+    [0,  loadImage("./src/assets/whitePawn.png")],
+    [1,  loadImage("./src/assets/whitePawn.png")],
+    [-1, loadImage("./src/assets/blackPawn.png")],
+    [2,  loadImage("./src/assets/whiteKnight.png")],
+    [-2, loadImage("./src/assets/blackKnight.png")],
+    [3,  loadImage("./src/assets/whiteBishop.png")],
+    [-3, loadImage("./src/assets/blackBishop.png")],
+    [4,  loadImage("./src/assets/whiteRook.png")],
+    [-4, loadImage("./src/assets/blackRook.png")],
+    [5,  loadImage("./src/assets/whiteQueen.png")],
+    [-5, loadImage("./src/assets/blackQueen.png")],
+    [6,  loadImage("./src/assets/whiteKing.png")],
+    [-6, loadImage("./src/assets/blackKing.png")]
+]);
 
 /* Encodings */
 const Piece = Object.freeze({
@@ -75,7 +74,7 @@ let blackKingMoved = false;
 let blackShortRookMoved = false;
 let blackLongRookMoved = false;
 // Game play
-let playerColor = Color.WHITE; // -1 (black), 1 (white)
+let playerColor; // -1 (black), 1 (white)
 let turnToMove;  // -1 (black), 1 (white)
 let pieceHeldRank = null;
 let pieceHeldFile = null;
@@ -90,12 +89,22 @@ const TILE_SIZE = 100;
 let gameOverMessage;
 const notification = document.getElementById("notification");
 const winner = document.getElementById("winner");
-const subtext = document.getElementById("subtext");
+// Options
+const options = document.getElementById("options");
+const boardDisplay = document.getElementById("boardDisplay"); 
 
 // Firebase
-const DB_URL = "https://struglauk-default-rtdb.firebaseio.com/.json";
+const POLL_SPEED = 1000;
+let roomId, roomCode;
 
-window.onload = async function () {
+export default function main(rCode, rId, color) {
+    // GAME ENTRY
+    console.log("RUNNING ONLINE: " + color);
+    roomCode = rCode;
+    roomId = rId;
+    // Set up canvas rendering
+    resizeCanvas();
+
     // Add event listeners
     const restartButton = document.getElementById("restartButton");
     restartButton.addEventListener("click", function(){
@@ -104,59 +113,35 @@ window.onload = async function () {
         gameLoop();
     });
     window.addEventListener("resize", resizeCanvas());
-    window.addEventListener("click", (event) => {
-        if (gameOver) return;
-        // Get the rank and file of the mouse click
-        const rect = canvas.getBoundingClientRect();
-        const mouseX = event.clientX - rect.left;
-        const mouseY = event.clientY - rect.top;
-        const file = Math.floor(mouseX / TILE_SIZE);
-        const rank = Math.floor(mouseY / TILE_SIZE); 
-        // Get the piece clicked
-        const pieceClicked = board[rank][file];
-        renderBoard();
-        if (isHoldingPiece){
-            // Play a legal move
-            if (getLegalMoves(pieceHeldRank, pieceHeldFile).some(move => move[0] == rank && move[1] == file)){
-                movePiece(pieceHeldRank, pieceHeldFile, rank, file);
-                // Check if the move played checkmated the opponents
-                if (isCheckmate()){
-                    gameOver = true;
-                    gameOverMessage = `${turnToMove == Color.WHITE ? "Black" : "White"} wins by checkmate`;
-                    showResults();
-                }
-                // TODO: Store the move played
-            }
-            // Reselect same piece to deselect
-            else if (rank == pieceHeldRank && file == pieceHeldFile){
-                isHoldingPiece = false;
-            }
-            // Select another piece
-            else if (pieceClicked != 0 && Math.sign(pieceClicked) == Math.sign(turnToMove)){
-                pickupPiece(rank, file);
-            }
-            // Empty square or enemy piece selected, deselect held piece
-            else{
-                isHoldingPiece = false;
-            }
+    window.addEventListener("click", (event) => {handleClick(event)});
+    window.addEventListener("keydown", function (event){
+        if (event.key === "ArrowLeft"){
+            console.log("YIPPEE");
+            clearDatabase();
+        } else if (event.key === "ArrowRight"){
+            clearDatabase();
         }
-        // Pick up a piece
-        else if (pieceClicked != Piece.EMPTY && Math.sign(pieceClicked) === Math.sign(turnToMove)){
-            pickupPiece(rank, file);
-        }       
-        // Render the pieces
-        renderPieces();
     });
-
-    
-
     // Start game
-    gameLoop();
+    startGame(color);
 }
 
+async function startGame(color){
+    // Initial board layout
+    resetBoard();
+    // Assign the player color. White goes first
+    playerColor = color;
+    turnToMove = Color.WHITE;
+    // Black starts by waiting for white's initial move
+    if (playerColor == Color.BLACK){
+        readMove();
+    }
+    // Render the original board
+    render();
+}
 
 async function clearDatabase(){
-    fetch(DB_URL, {
+    fetch(`${DB_URL}/.json`, {
         method: 'DELETE', 
         headers: {
           'Content-Type': 'application/json'
@@ -172,100 +157,149 @@ async function clearDatabase(){
     });
 }
 
+async function clearMove(){
+    // Delete the opponent's from component of their move
+    fetch(`${DB_URL}/rooms/${roomCode}/${roomId}/${-playerColor}from.json`, {
+        method: "DELETE"
+    })
+    .then(response => response.json())
+    .then(data => console.log("Field deleted successfully:", data))
+    .catch(error => console.error("Error deleting field:", error));
+    // Delete the opponent's to component of their move
+    fetch(`${DB_URL}/rooms/${roomCode}/${roomId}/${-playerColor}to.json`, {
+        method: "DELETE"
+    })
+    .then(response => response.json())
+    .then(data => console.log("Field deleted successfully:", data))
+    .catch(error => console.error("Error deleting field:", error));
+}
+
 async function readMove(){
-    const move = fetch(DB_URL)
-        .then(response => response.json())
-        .then(data => {
-            // Number of messages
-            let size = 0;
-            for (let key in data){
-                size+=1;
-            }
-            if (size == 0) console.log("no moves");
-            else if (size > 1) console.log("too many moves");
-            for (let key in data){
-                console.log("FROM: " + data[key]["from"]);
-                console.log("TO: " + data[key]["to"]);
-            }
-        })
-        .catch(error => {
-            console.error('Error reading moves:', error);
-        });
+    let validMoveReceived = false;
+    await fetch(`${DB_URL}/rooms/${roomCode}/${roomId}.json`)
+    .then(response => response.json())
+    .then(data => {
+        // Check that the database contains a single move
+        if (data != null && Object.keys(data).length == 4){
+            // Mark that a move was read to stop polling
+            validMoveReceived = true;
+            // Get the move
+            const fromRank = data[`${-playerColor}from`][0]; 
+            const fromFile = data[`${-playerColor}from`][1]; 
+            const toRank = data[`${-playerColor}to`][0]; 
+            const toFile = data[`${-playerColor}to`][1]; 
+            // Clear the move from the database
+            clearMove();
+            // Play the move on the board
+            movePiece(fromRank, fromFile, toRank, toFile);
+            // Switch turns
+            turnToMove *= -1;
+        }
+    })
+    .catch(error => {
+        console.error('Error reading moves:', error);
+    });
+    // Exit if a valid move was read and played
+    if (validMoveReceived){
+        return;
+    }
+    // Otherwise, poll again every two seconds
+    console.log("poll");
+    await new Promise(resolve => setTimeout(resolve, POLL_SPEED));
+    readMove();
 }
 
 async function sendMove(moveData){
-    fetch(DB_URL, {
-    method: 'POST', 
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(moveData)  
-    })
-    .then(response => response.json())  
-    .then(data => {
-        console.log('Move added successfully:', data);
-    })
-    .catch(error => {
-        console.error('Error adding move:', error);
-    });
+    console.log("send move: " + moveData);
+
+    fetch(`${DB_URL}/rooms/${roomCode}/${roomId}.json`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(moveData)
+      })
+      .then(response => response.json())
+      .then(data => console.log("Move added successfully:", data))
+      .catch(error => console.error("Error updating move:", error))
 }
 
-async function gameLoop(){
-    // Initial board layout
-    resetBoard();
-    // White moves first
-    turnToMove = Color.WHITE;
-    // Set up canvas rendering
-    resizeCanvas();
-
-    // TODO: Show previous game states
-    window.addEventListener("keydown", function (event){
-        if (event.key === "ArrowLeft"){
-            console.log("YIP{EEE");
-        } else if (event.key === "~"){
-            clearDatabase();
+function handleClick(event){
+    if (gameOver) return;
+    // Only handle the mouse click if it's the player's turn to move
+    if (turnToMove != playerColor) return;
+    // Get the rank and file of the mouse click
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    const file = Math.floor(mouseX / TILE_SIZE);
+    const rank = Math.floor(mouseY / TILE_SIZE); 
+    // Get the piece clicked
+    const pieceClicked = board[rank][file];
+    renderBoard();
+    if (isHoldingPiece){
+        // Play a legal move
+        if (getLegalMoves(pieceHeldRank, pieceHeldFile).some(move => move[0] == rank && move[1] == file)){
+            // Switch the pieces on the board representation
+            movePiece(pieceHeldRank, pieceHeldFile, rank, file);
+            turnToMove *= -1;
+            // Check if the move played checkmated the opponents
+            if (isCheckmate()){
+                gameOver = true;
+                gameOverMessage = `${turnToMove == Color.WHITE ? "Black" : "White"} wins by checkmate`;
+                showResults();
+            }
+            // Send the move to the opponent
+            sendMove({[`${playerColor}from`]: [pieceHeldRank, pieceHeldFile], [`${playerColor}to`]: [rank, file]});
+            // Wait for their response
+            readMove();
+            // TODO: Store move history
+            // ...
         }
-    });
-
-    const exampleMove = {
-        "from": [3, 4],
-        "to": [3, 6]
+        // Reselect same piece to deselect
+        else if (rank == pieceHeldRank && file == pieceHeldFile){
+            isHoldingPiece = false;
+        }
+        // Select another piece
+        else if (pieceClicked != 0 && Math.sign(pieceClicked) == Math.sign(turnToMove)){
+            pickupPiece(rank, file);
+        }
+        // Empty square or enemy piece selected, deselect held piece
+        else{
+            isHoldingPiece = false;
+        }
     }
-    // readMove(exampleMove);
-    // sendMove(exampleMove);
-    
-    // Control loop
-    while (!gameOver){
-        
-    }
-
-    render();
+    // Pick up a piece
+    else if (pieceClicked != Piece.EMPTY && Math.sign(pieceClicked) === Math.sign(turnToMove)){
+        pickupPiece(rank, file);
+    }       
+    // Render the pieces
+    renderPieces();
 }
 
-function movePiece(previousRank, previousFile, newRank, newFile){
-    const pieceMoved = board[previousRank][previousFile];
+function movePiece(fromRank, fromFile, toRank, toFile){
+    const pieceMoved = board[fromRank][fromFile];
     /* Move the rook during a castle move */
     // White short castle
-    if (pieceMoved == Piece.WHITE_KING && previousFile + 2 == newFile){
+    if (pieceMoved == Piece.WHITE_KING && fromFile + 2 == toFile){
         board[7][5] = Piece.WHITE_ROOK;
         board[7][7] = Piece.EMPTY;
     }
     // White long castle
-    else if (pieceMoved == Piece.WHITE_KING && previousFile - 2 == newFile){
+    else if (pieceMoved == Piece.WHITE_KING && fromFile - 2 == toFile){
         board[7][3] = Piece.WHITE_ROOK;
         board[7][0] = Piece.EMPTY;
     }
     // Black short castle
-    else if (pieceMoved == Piece.BLACK_KING && previousFile + 2 == newFile){
+    else if (pieceMoved == Piece.BLACK_KING && fromFile + 2 == toFile){
         board[0][5] = Piece.BLACK_ROOK; 
         board[0][7] = Piece.EMPTY;
     }
     // Black long castle
-    else if (pieceMoved == Piece.BLACK_KING && previousFile - 2 == newFile){
+    else if (pieceMoved == Piece.BLACK_KING && fromFile - 2 == toFile){
         board[0][3] = Piece.BLACK_ROOK;
         board[0][0] = Piece.EMPTY;
     }
-    // TODO: black castle
 
     /* Keep track if the king or rook moved to disqualifying castling */
     // King moved
@@ -275,20 +309,22 @@ function movePiece(previousRank, previousFile, newRank, newFile){
         blackKingMoved = true;
     }
     // Rook moved
-    if (pieceMoved == Piece.WHITE_ROOK) {
-        if (previousRank == 7 && previousFile == 7) whiteShortRookMoved = true; 
-        if (previousRank == 7 && previousFile == 0) whiteLongRookMoved = true; 
+    else if (pieceMoved == Piece.WHITE_ROOK) {
+        if (fromRank == 7 && fromFile == 7) whiteShortRookMoved = true; 
+        if (fromRank == 7 && fromFile == 0) whiteLongRookMoved = true; 
     }
-    if (pieceMoved == Piece.BLACK_ROOK) {
-        if (previousRank == 0 && previousFile == 7) blackShortRookMoved = true; 
-        if (previousRank == 0 && previousFile == 0) blackLongRookMoved = true;
+    else if (pieceMoved == Piece.BLACK_ROOK) {
+        if (fromRank == 0 && fromFile == 7) blackShortRookMoved = true; 
+        if (fromRank == 0 && fromFile == 0) blackLongRookMoved = true;
     }
     // Move the piece from the old square to the new 
     isHoldingPiece = false;
-    board[newRank][newFile] = board[previousRank][previousFile];
-    board[previousRank][previousFile] = Piece.EMPTY;
-    turnToMove *= -1;
+    board[toRank][toFile] = pieceMoved;
+    board[fromRank][fromFile] = Piece.EMPTY;
+    // Render the move played
+    render();
 }
+
 
 function pickupPiece(rank, file){
     isHoldingPiece = true;
@@ -534,6 +570,12 @@ function resizeCanvas(){
     ctx = canvas.getContext("2d");
 }
 
+function loadImage(src){
+    const img = new Image();
+    img.src = src;
+    return img;
+}
+
 function render(){
     //...
     renderBoard();
@@ -548,45 +590,8 @@ function renderPieces() {
             // Ignore empty tiles
             if (piece == Piece.EMPTY) continue;
             // Get the corresponding piece image
-            let pieceImg;
-            switch (piece) {
-                case Piece.WHITE_PAWN:
-                    pieceImg = whitePawnImage;
-                    break;
-                case Piece.BLACK_PAWN:
-                    pieceImg = blackPawnImage;
-                    break;
-                case Piece.WHITE_KNIGHT:
-                    pieceImg = whiteKnightImage;
-                    break;
-                case Piece.BLACK_KNIGHT:
-                    pieceImg = blackKnightImage;
-                    break;
-                case Piece.WHITE_BISHOP:
-                    pieceImg = whiteBishopImage;
-                    break;
-                case Piece.BLACK_BISHOP:
-                    pieceImg = blackBishopImage;
-                    break;
-                case Piece.WHITE_ROOK:
-                    pieceImg = whiteRookImage;
-                    break;
-                case Piece.BLACK_ROOK:
-                    pieceImg = blackRookImage;
-                    break;
-                case Piece.WHITE_QUEEN:
-                    pieceImg = whiteQueenImage;
-                    break;
-                case Piece.BLACK_QUEEN:
-                    pieceImg = blackQueenImage;
-                    break;
-                case Piece.WHITE_KING:
-                    pieceImg = whiteKingImage;
-                    break;
-                case Piece.BLACK_KING:
-                    pieceImg = blackKingImage;
-                    break;
-            }
+            let pieceImg = pieceImageMap.get(piece);
+            
             // Render the piece
             ctx.drawImage(pieceImg, file * TILE_SIZE, rank * TILE_SIZE, TILE_SIZE, TILE_SIZE);
 
@@ -611,9 +616,9 @@ function renderBoard(){
 
 function showResults(){
     notification.style.display = "flex";
-    winner.innerText = gameOverMessage;
+    winner.textContent = gameOverMessage;
 }
 
 function hideResults(){
     notification.style.display = "none";
-}  
+}

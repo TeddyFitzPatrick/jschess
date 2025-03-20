@@ -3,3 +3,7 @@
 /* 
 npx @tailwindcss/cli -i ./src/css/input.css -o ./src/css/output.css --watch
  */
+
+.chess_button{
+    @apply p-4 rounded-2xl shadow-2xl bg-black text-white hover:scale-110
+}
